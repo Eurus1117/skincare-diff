@@ -13,9 +13,7 @@ try:
     api_key = st.secrets["DASHSCOPE_API_KEY"]
     if api_key:
         os.environ['DASHSCOPE_API_KEY'] = api_key
-        prefix = api_key[:8]
-        suffix = api_key[-4:]
-        st.success(f"✅ API Key 已加载（{prefix}...{suffix}）")
+        
     else:
         st.error("❌ Secrets 中的 API Key 为空")
         st.stop()
