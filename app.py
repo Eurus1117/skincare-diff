@@ -7,23 +7,21 @@ import os
 st.set_page_config(page_title="护肤品成分对比", layout="wide")
 st.title("🧴 护肤品迭代版本成分对比")
 
-# ===== API Key 加载逻辑（双重保险） =====
+# ===== API Key 加载逻辑 =====
+api_key = None
 try:
     api_key = st.secrets["DASHSCOPE_API_KEY"]
     if api_key:
-        # 同时设置环境变量和直接赋值，确保 dashscope 能读到
         os.environ['DASHSCOPE_API_KEY'] = api_key
-        Generation.api_key = api_key
-        # 调试输出（只显示前后几位，避免完整泄露）
         prefix = api_key[:8]
         suffix = api_key[-4:]
         st.success(f"✅ API Key 已加载（{prefix}...{suffix}）")
     else:
-        st.error("❌ Secrets 中的 API Key 为空，请检查配置")
+        st.error("❌ Secrets 中的 API Key 为空")
         st.stop()
 except Exception as e:
     st.error(f"❌ 加载 API Key 失败：{e}")
-    st.info("请在 Streamlit Cloud 后台正确配置 DASHSCOPE_API_KEY")
+    st.info("请在 Streamlit Cloud 后台配置 DASHSCOPE_API_KEY")
     st.stop()
 # ===== API Key 加载结束 =====
 
@@ -40,78 +38,53 @@ def load_data():
             return df
         except Exception as e:
             st.error(f"❌ 无法读取 Excel 文件：{e}")
-            st.info("请确认 data.xlsx 已正确上传且格式无误")
             st.stop()
 
 df = load_data()
 
-# 检查必需的列是否存在
+# 检查必需列
 required_columns = ['product_standard', 'version_label', '配方标识', 'ingredient_name_raw', 'ingredient_order']
 missing_columns = [col for col in required_columns if col not in df.columns]
 if missing_columns:
-    st.error(f"❌ Excel 文件中缺少以下列：{', '.join(missing_columns)}")
-    st.info("请检查 data.xlsx 的列名是否正确（区分大小写和中文标点）")
+    st.error(f"❌ Excel 缺少必需列：{', '.join(missing_columns)}")
     st.stop()
-
-# 获取产品标准名列表
-product_standards = df['product_standard'].unique().tolist() if 'product_standard' in df.columns else ["薇诺娜舒敏保湿特护霜"]
-
-# 获取所有版本列表
-versions = df['version_label'].unique().tolist() if 'version_label' in df.columns else []
 
 # ====== 界面布局 ======
 products = df['product_standard'].unique().tolist()
-
 selected_product = st.selectbox("选择产品（以昵称展示）", products, key="product_selector")
 
 formulas = df[df['product_standard'] == selected_product]['配方标识'].unique().tolist()
 selected_formula = st.selectbox("选择配方单元", formulas) if len(formulas) > 1 else formulas[0]
 
 product_versions = df[df['product_standard'] == selected_product]['version_label'].unique().tolist()
-
 if len(product_versions) == 0:
-    st.warning(f"⚠️ 产品「{selected_product}」没有版本数据，请检查 Excel")
+    st.warning(f"⚠️ 产品「{selected_product}」没有版本数据")
     st.stop()
 
 col1, col2 = st.columns(2)
-
 with col1:
     st.subheader("旧版本")
-    v1 = st.selectbox(
-        "选择旧版本",
-        product_versions,
-        key=f"v1_{selected_product}"
-    )
-
+    v1 = st.selectbox("选择旧版本", product_versions, key=f"v1_{selected_product}")
 with col2:
     st.subheader("新版本")
-    v2 = st.selectbox(
-        "选择新版本",
-        product_versions,
-        key=f"v2_{selected_product}"
-    )
+    v2 = st.selectbox("选择新版本", product_versions, key=f"v2_{selected_product}")
 
 # 对比按钮
 if st.button("🔍 开始对比", type="primary"):
-    # 检查数据是否存在
+    # 检查数据
     v1_exists = len(df[(df['product_standard'] == selected_product) & (df['version_label'] == v1) & (df['配方标识'] == selected_formula)]) > 0
     v2_exists = len(df[(df['product_standard'] == selected_product) & (df['version_label'] == v2) & (df['配方标识'] == selected_formula)]) > 0
-
-    if not v1_exists:
-        st.error(f"❌ 未找到「{selected_product}」的「{v1}」-「{selected_formula}」数据，请检查数据录入")
-        st.stop()
-    if not v2_exists:
-        st.error(f"❌ 未找到「{selected_product}」的「{v2}」-「{selected_formula}」数据，请检查数据录入")
+    if not v1_exists or not v2_exists:
+        st.error("❌ 未找到对应数据，请检查录入")
         st.stop()
 
-    # 拆分两代数据
+    # 拆分数据
     df_v1 = df[(df['product_standard'] == selected_product) & (df['version_label'] == v1) & (df['配方标识'] == selected_formula)][['ingredient_name_raw', 'ingredient_order']].rename(columns={'ingredient_order': 'ingredient_order_一代'})
     df_v1['ingredient_order_一代'] = df_v1['ingredient_order_一代'].astype('Int64')
-
     df_v2 = df[(df['product_standard'] == selected_product) & (df['version_label'] == v2) & (df['配方标识'] == selected_formula)][['ingredient_name_raw', 'ingredient_order']].rename(columns={'ingredient_order': 'ingredient_order_二代'})
     df_v2['ingredient_order_二代'] = df_v2['ingredient_order_二代'].astype('Int64')
 
-    # 合并对比
+    # 合并
     merged = pd.merge(df_v1, df_v2, on='ingredient_name_raw', how='outer')
     merged = merged.reset_index(drop=True)
 
@@ -126,14 +99,13 @@ if st.button("🔍 开始对比", type="primary"):
 
     merged['变化类型'] = merged.apply(classify_change, axis=1)
 
-    # 按第一代排序，新增放最后
+    # 排序
     merged['sort_key'] = merged['ingredient_order_一代'].fillna(999)
     merged = merged.sort_values('sort_key')
     merged = merged.drop(columns=['sort_key'])
 
-    # 展示对比表格
+    # 展示表格
     st.subheader(f"📊 成分对比明细（{selected_formula}）")
-
     def highlight_row(row):
         change_type = row['变化类型']
         if change_type == '新增':
@@ -148,7 +120,7 @@ if st.button("🔍 开始对比", type="primary"):
     styled_df = merged.style.apply(highlight_row, axis=1)
     st.dataframe(styled_df, use_container_width=True, hide_index=True)
 
-    # 统计概览卡片
+    # 统计
     col_a, col_b, col_c, col_d = st.columns(4)
     with col_a:
         st.metric("新增", len(merged[merged['变化类型'] == '新增']))
@@ -161,9 +133,8 @@ if st.button("🔍 开始对比", type="primary"):
 
     # AI摘要
     total_changes = len(merged[merged['变化类型'] == '新增']) + len(merged[merged['变化类型'] == '移除']) + len(merged[merged['变化类型'] == '排序变化'])
-
     if total_changes == 0:
-        st.info("📝 两个版本完全相同，没有成分变化，因此无需生成AI摘要。")
+        st.info("📝 两个版本完全相同")
     else:
         st.subheader("🤖 AI 智能摘要")
 
@@ -179,17 +150,14 @@ if st.button("🔍 开始对比", type="primary"):
                 prompt += f"新增常规成分（{len(added_regular)}种）：{', '.join(added_regular['ingredient_name_raw'].tolist())}\n"
             else:
                 prompt += "新增常规成分：无\n"
-
             if len(added_trace) > 0:
                 prompt += f"新增微量成分（{len(added_trace)}种）：{', '.join(added_trace['ingredient_name_raw'].tolist())}\n"
             else:
                 prompt += "新增微量成分：无\n"
-
             if len(removed) > 0:
                 prompt += f"移除成分：{', '.join(removed['ingredient_name_raw'].tolist())}\n"
             else:
                 prompt += "移除成分：无\n"
-
             if len(moved) > 0:
                 prompt += "排序变化：\n"
                 for _, row in moved.iterrows():
@@ -210,18 +178,17 @@ if st.button("🔍 开始对比", type="primary"):
                     model='qwen-plus',
                     prompt=prompt,
                     max_tokens=500,
-                    temperature=0.7
+                    temperature=0.7,
+                    api_key=api_key  # 👈 关键修改
                 )
                 summary = response.output.text
-                print("调试：AI返回内容：", summary)
                 st.success("✅ 摘要生成完成")
                 st.markdown(summary.replace('\n', '  \n'))
             except Exception as e:
                 st.error(f"AI摘要生成失败：{e}")
-                st.info("请检查 API Key 是否配置正确，以及网络是否正常。")
+
 else:
     st.info("👆 选择新旧版本后，点击「开始对比」按钮查看结果")
 
-# 页脚
 st.markdown("---")
 st.caption("数据来源：国家药监局备案信息 · 仅供学习参考")
