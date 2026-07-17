@@ -7,35 +7,51 @@ import os
 st.set_page_config(page_title="护肤品成分对比", layout="wide")
 st.title("🧴 护肤品迭代版本成分对比")
 
-# ===== API Key 加载逻辑（增强版） =====
+# ===== API Key 加载逻辑（双重保险） =====
 try:
-    # 尝试从 Streamlit Cloud Secrets 读取
     api_key = st.secrets["DASHSCOPE_API_KEY"]
     if api_key:
+        # 同时设置环境变量和直接赋值，确保 dashscope 能读到
+        os.environ['DASHSCOPE_API_KEY'] = api_key
         Generation.api_key = api_key
-        st.success("✅ API Key 已从 Secrets 加载")
+        # 调试输出（只显示前后几位，避免完整泄露）
+        prefix = api_key[:8]
+        suffix = api_key[-4:]
+        st.success(f"✅ API Key 已加载（{prefix}...{suffix}）")
     else:
         st.error("❌ Secrets 中的 API Key 为空，请检查配置")
         st.stop()
 except Exception as e:
-    # 如果 st.secrets 不存在，尝试从系统环境变量读取（本地开发）
-    api_key = os.environ.get("DASHSCOPE_API_KEY")
-    if api_key:
-        Generation.api_key = api_key
-        st.success("✅ API Key 已从系统环境变量加载")
-    else:
-        st.error(f"❌ 未找到 API Key：{e}")
-        st.info("请在 Streamlit Cloud 后台配置 DASHSCOPE_API_KEY，或在本地设置环境变量")
-        st.stop()
+    st.error(f"❌ 加载 API Key 失败：{e}")
+    st.info("请在 Streamlit Cloud 后台正确配置 DASHSCOPE_API_KEY")
+    st.stop()
 # ===== API Key 加载结束 =====
 
 # 读取 Excel 数据
 @st.cache_data
 def load_data():
-    df = pd.read_excel("data.xlsx", sheet_name='实例')
-    return df
+    try:
+        df = pd.read_excel("data.xlsx", sheet_name='实例')
+        return df
+    except Exception:
+        try:
+            df = pd.read_excel("data.xlsx", sheet_name=0)
+            st.warning("⚠️ 使用第一个 sheet（未找到名为「实例」的 sheet）")
+            return df
+        except Exception as e:
+            st.error(f"❌ 无法读取 Excel 文件：{e}")
+            st.info("请确认 data.xlsx 已正确上传且格式无误")
+            st.stop()
 
 df = load_data()
+
+# 检查必需的列是否存在
+required_columns = ['product_standard', 'version_label', '配方标识', 'ingredient_name_raw', 'ingredient_order']
+missing_columns = [col for col in required_columns if col not in df.columns]
+if missing_columns:
+    st.error(f"❌ Excel 文件中缺少以下列：{', '.join(missing_columns)}")
+    st.info("请检查 data.xlsx 的列名是否正确（区分大小写和中文标点）")
+    st.stop()
 
 # 获取产品标准名列表
 product_standards = df['product_standard'].unique().tolist() if 'product_standard' in df.columns else ["薇诺娜舒敏保湿特护霜"]
