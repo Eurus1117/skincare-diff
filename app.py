@@ -10,9 +10,10 @@ st.title("🧴 护肤品迭代版本成分对比")
 # 如果 st.secrets 不存在，则从系统环境变量读取（本地开发时使用）
 try:
     api_key = st.secrets["DASHSCOPE_API_KEY"]
-    os.environ['DASHSCOPE_API_KEY'] = api_key
+    # 直接设置 dashscope 的 api_key，而不是通过环境变量
+    Generation.api_key = api_key
 except Exception:
-    # 本地开发时，从系统环境变量读取（你当前已经配置好的方式）
+    # 本地开发时，从系统环境变量读取
     pass
 
 # 从环境变量读取 API Key（如果你之前配置了环境变量，SDK会自动读取，这里不用再赋值）
