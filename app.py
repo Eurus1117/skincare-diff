@@ -13,6 +13,7 @@ try:
     if api_key:
         Generation.api_key = api_key
         st.success("✅ API Key 已加载")
+        st.write("测试：正在加载数据...")
     else:
         st.error("❌ Secrets 中的 API Key 为空，请检查配置")
         st.stop()
